@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html> 
+	<head>
+		<meta charset="utf-8">
+		<meta author="488548816@qq.com">
+		<title>代码统计工具</title>
+	</head>
+	<body>
+		<div style="display: flex;flex-direction: column;height: 100%;"> 
+			<div style="margin: auto;width:500px;padding: 20px;">
+				<div style="margin: 20px 0px;justify-content: space-between;display: flex;">
+					<div>支持自定义后缀查询</div>
+					<label for="ifAllTypes">是否选择全部类型文件
+						<input type="checkbox" name="ifAllTypes" id="ifAllTypes" />
+					</label>
+				</div>
+				<div style="margin-top: 20px;display: flex;">
+					<label for="types">规定扫描文件后缀： </label>
+					<input id="types" style="padding-left: 10px;flex: 1;" type="text" onchange="typeChange(event)" />
+				</div>
+				<div style="margin-top: 20px;justify-content: space-between;display: flex;">
+					<label for="fileDir">选择文件夹
+						<input onchange="filesChange(event)" id="fileDir" type="file" webkitdirectory directory />
+					</label>
+					<button onclick="reset('fileDir')">重置</button>
+				</div>
+				<div style="margin: 20px 0px;justify-content: space-between;display: flex;">
+					<label for="files">选择单文件
+						<input onchange="filesChange(event)" id="files" type="file" multiple />
+					</label>
+					<button onclick="reset('files')">重置</button>
+				</div>
+				<div style="display: flex;justify-content: space-between;">
+					<button onclick="exportExcel()">导出</button>
+					<div style="display: flex;">
+						<span>筛选：</span>
+						<span id="filterType"></span>
+					</div>
+					<button onclick=" filterSet('')">重置筛选</button>
+					<!-- <label for="ifClsImport">“java import”行清除
+						<input type="checkbox" name="importCheck" id="importCheck" checked="checked" />
+					</label> -->
+					<label for="ifClsBlank">空行清除
+						<input type="checkbox" name="ifClsBlank" id="ifClsBlank" checked="checked" />
+					</label>
+				</div> 
+			</div>
+			<div style="width: 1000px;overflow: scroll;margin: auto;max-height: 270px;">
+				<table id="result" style="width: 100%;"></table>
+			</div>
+			<div style="width: 1000px;overflow: scroll;margin: auto;max-height: 270px;margin-top: 30px;margin-bottom: 50px;">
+				<table id="unType" style="width: 100%;"> </table>
+			</div>
+		</div>
+	</body>
+</html>
+<script type="text/javascript">
+	let ifAllTypes = document.getElementById('ifAllTypes')
+	let allTypeList = []; //全部文件类型的存储数组
+	let typeList = ["c","cpp","java"];
+	let timeCost = 0;
+	let results = [];//作为中间变量，当count>=maxFiles时，showList = results
+	let showList = [];//表示需要查找的文件类型的文件数组及某种类型的文件数组
+	let maxFiles = 0;//总文件个数（指的是需要查找的文件类型）
+	let count = 0;//记得遍历的文件个数（在符合类型要求的文件数组中），在大于等于maxFiles即可调用函数输出结果
+	let unTypefiles = [];//不在统计规则内的文件类型数组
+	let allFuntionLines = [];//存储所有文件中函数行数的数组
+	document.getElementById("types").value = typeList.join()
+	// 是否选择全部类型文件
+	ifAllTypes.onclick = function(){
+		if(ifAllTypes.checked){ //注：文件的总类型可通过checkIsText函数获取
+			typeList = [
+				'cpp', 'cfg', 'sln', 'vcproj', 'h', 'htm', 'lib', 'def', 'sql', 'ico', 
+				'rc', 'makefile', 'mak', 'rc2', 'wpc', 'bmp', 'Cpp', 'H', 'bat', 'HM', 
+				'odl', 'Reg', 'idl', 'rgm', 'dsm', 'tcs', 'cnt', 'HLP', 'ICO', 'txt', 
+				'chm', 'hhc', 'hhk', 'hhp', 'reg', 'hie', 'lst', 'rul', 'cur', 'rgs', 
+				'mk', 'gif', 'jpg', 'MAKEFILE', 'AVI', 'RC2', 'BMP', 'fd', 'utf', 'CPP', 
+				'rcm', 'mdb', 'rc3', 'avi', 'res', 'exe', 'FTS', 'hpj', 'lic', 'wav', 
+				'dib', 'c', 'asm', 'inc', 'APS', 'vb', 'vbproj', 'bas', 'vbp', 'js', 
+				'cs', 'csproj', 'doc', 'vsdir', 'vsz', 'snk', 'vdproj', 'resx', 'vsmacros', 'inf', 
+				'C', 'aspx', 'asmx', 'make', 'asax', 'resX', 'config', 'xml', 'aps', 'vspscc', 
+				'myapp', 'settings', 'discomap', 'disco', 'wsdl', 'srf', 'udl', 'css', 'suo', 'map',
+				"inl", "scc", "dsp", "dsw", "ini", "5", "png", "cpp_1", "dat", "INL",
+				"frm", "HTM", "java"
+			]
+			document.getElementById("types").value = '全选';
+		}else{
+			let typeList = ["c","cpp","java"];
+			document.getElementById("types").value = typeList.join()
+		}
+	}
+	// 数组去重函数
+	function removeDuplicate(arr) {
+		const newArr = []
+		arr.forEach(item => {
+			if (newArr.indexOf(item) === -1) {
+			newArr.push(item)
+			}
+		})
+		return newArr // 返回一个新数组
+	}
+	//类型规定变化
+	function typeChange(evt) {
+		// console.log(evt.target.value)
+		if (evt.target.value) {
+			typeList = evt.target.value.split(",")
+		}
+	}
+	// 导出文件
+	function exportExcel(evt) { 
+		if (showList.length > 0) {
+			pimport = /\bimport\b/
+			let strContent = ""
+			// let importCheck = document.getElementById('importCheck')
+			let ifClsBlank = document.getElementById('ifClsBlank')
+			// console.log(importCheck.checked)
+			let copyList = showList.slice()
+			copyList.forEach(val => {
+				let tempName = val.path.split(".")
+				strContent += val.path + ":\n" //名称
+				tempName = tempName[tempName.length - 1] //后缀
+				// if (importCheck.checked && tempName == 'java') {
+				// 	val.src = val.src.filter(res => {
+				// 		return !pimport.test(res)
+				// 	})
+				// }
+				if (ifClsBlank.checked) {
+					val.src = val.src.filter(res => {
+						// console.log(res+"--"+ res.trim().length)
+						return res.trim().length > 0 && res != '\t'
+					})
+				}
+				strContent += val.src.join("\n")
+			})
+			// console.log(strContent)
+			download(strContent)
+		}
+	}
+	//按照id清空input
+	function reset(name) {
+		let doc = document.getElementById(name)
+		doc.value = ""
+	}
+	//选择文件后
+	function filesChange(evt) { 
+		count = 0
+		checkedList = []
+		results = []
+		unTypefiles = []
+		// console.log(evt)
+		//检查格式
+		for (let i = 0; i < evt.target.files.length; i++) {
+			let file = evt.target.files[i];
+			if (!checkIsText(file)) {
+				continue
+			}
+			checkedList.push(file)
+		}
+		// console.log(checkedList)
+		//格式检查完成
+		maxFiles = checkedList.length
+
+		checkedList.forEach(val => {
+			getFileLines(val)
+		})
+	}
+	//获得一个文件的行数等信息
+	function getFileLines(file) {
+		// 计时
+		var start = performance.now();
+
+		// console.log(file)
+		let file_reader = new FileReader();
+		// console.log(count)
+		file_reader.onload = async() => {
+			let fc = file_reader.result;
+			let tempName = file.webkitRelativePath .split(".")
+			tempName = tempName[tempName.length - 1] //后缀
+			// 空行正则匹配
+			var filterStr1=/^$/;
+			var filterStr2=/^\r|\n\r|\n$/;
+			// 注释行正则匹配
+			var filterStr3=/\/\/.*|\/\*\*[\s\S]*\*\//;
+			let singleBlankCount = 0;
+			let doubleBlankCount = 0;
+			let notesLineCount = 0;
+			// 函数有关统计
+			let funCount = 0; //本文件的函数个数
+			let bracket1 = 0;// 计数器 记录函数是否缺 { } 括号问题
+			let bracket2 = 0;// 计数器 记录函数是否缺 ( ) 括号问题
+			let beginLine = 0;//记录函数的开始行数
+			let funLineCount = 0;//记录函数的行数
+			let maxFunLine = 0;//记录行数最多的函数的行数
+			let minFunLine = 1;//记录行数最少的函数的行数
+			let aveFunLine =0;//记录目前函数行数平均值
+
+			// console.log("onload")
+			fc = fc.split("\n")
+			// 判断空行、注释行、函数个数行数
+			for(let i=0;i<fc.length;i++){
+				if(filterStr1.test(fc[i])||filterStr2.test(fc[i])||fc[i].length==0){
+					// 判断单行空行
+					singleBlankCount++
+					// 判断连续两行以上的空行
+					if(i==0&&(filterStr1.test(fc[i+1])||filterStr2.test(fc[i+1])||fc[i+1].length==0)){
+						doubleBlankCount++
+					}else if(i==fc.length-1&&(filterStr1.test(fc[i-1])||filterStr2.test(fc[i-1])||fc[i-1].length==0)){
+						doubleBlankCount++
+					// 我也不知道为什么加i!=0&&i!=fc.length-1)这个，不加会报错
+					}else if((i!=0&&i!=fc.length-1)&&((filterStr1.test(fc[i+1])||filterStr2.test(fc[i+1])||fc[i+1].length==0)||(filterStr1.test(fc[i-1])||filterStr2.test(fc[i-1])))){
+						doubleBlankCount++
+					}
+				}else if(filterStr3.test(fc[i])){
+					// 判断注释行
+					notesLineCount++;
+					// 函数有关判断
+				}else{
+					if(/[\(]/g.test(fc[i])){
+						++bracket2;
+					}
+					if(/[\)]/g.test(fc[i])){
+						--bracket2;
+					}
+					if(/[\{]/g.test(fc[i])){
+						++bracket1;
+						if(bracket1==1){
+							beginLine = i
+						}
+					}
+					if(/[\}]/g.test(fc[i])){
+						--bracket1;
+						if(bracket1==0&&bracket2==0){
+							funCount++;
+							funLineCount = i - beginLine + 1;
+							allFuntionLines.push(funLineCount);
+							aveFunLine = (aveFunLine *(funCount-1)+ funLineCount)/funCount
+							if(funLineCount>=maxFunLine){
+								maxFunLine = funLineCount;
+							}else if(funLineCount<=minFunLine){
+								minFunLine = funLineCount;
+							}
+						}
+					}
+				}
+
+			}
+
+			count += 1
+			if (fc) {
+				results.push({
+					path: file.webkitRelativePath != "" ? file.webkitRelativePath : file.name,
+					lines: fc.length,
+					src: fc,
+					size:file.size,
+					singleBlankCount:singleBlankCount,
+					doubleBlankCount:doubleBlankCount,
+					notesLineCount:notesLineCount,
+					funCount:funCount,
+					aveFunLine:aveFunLine,
+					maxFunLine:maxFunLine,
+					minFunLine:minFunLine
+				})
+			}
+			// console.log()
+			if (count >= maxFiles) {
+				showList = results
+				showResult()
+			}
+
+			var end = performance.now();
+			if(end - start>timeCost){
+				timeCost=(end - start);
+			}
+		};
+		file_reader.readAsText(file, 'UTF-8');
+	}
+	// 筛选某特定类型文件
+	function filterSet(type) {
+		console.log("筛选文件类型" + type)
+		let dom = document.getElementById("filterType");
+
+		if (type == "") {
+			dom.innerHTML = ""
+			showList = results
+		} else {
+			dom.innerHTML = type
+			showList = results.filter(res => {
+				let tempName = res.path.split(".")
+				tempName = tempName[tempName.length - 1] //后缀 
+				return tempName == type
+			})
+		}
+		showResult()
+
+	}
+	//展示结果
+	function showResult() {
+		let result = document.getElementById("result")
+		let textDom = ""
+		let countAll = 0
+		let sizeAll = 0
+		let singleBlankAll = 0
+		let doubleBlankAll = 0
+		let notesLineAll = 0
+		let funCountAll = 0
+		let aveFunLineAll = 0
+		let maxFunLineAll = 0
+		let minFunLineAll = 1
+		let typeCountList = typeList.map(val => {
+			let typeCountLine = 0; //行数统计
+			let typeCountFile = 0; //文件个数
+			let typeSizeFile = 0; //文件大小
+			let typeSingleBlank = 0;//单行空行行数
+			let typeDoubleBlank = 0;//单行空行行数
+			let typeNotesLine = 0; //注释行数
+			let typeFunCount = 0;//函数个数
+			let typeAveFunLine = 0;//函数行数平均值
+			let typeMaxFunLine = 0;//函数行数最大值
+			let typeMinFunLine = 1;//函数行数最小值
+			showList.forEach(res => {
+				// console.log(res)
+				let tempName = res.path.split(".")
+				tempName = tempName[tempName.length - 1] //后缀
+				if (tempName == val) {
+					typeCountLine += res.lines
+					typeCountFile += 1
+					typeSizeFile += res.size
+					typeSingleBlank +=res.singleBlankCount
+					typeDoubleBlank +=res.doubleBlankCount
+					typeNotesLine +=res.notesLineCount
+					typeFunCount +=res.funCount
+					typeAveFunLine = (typeAveFunLine * (typeFunCount-res.funCount)+res.aveFunLine*res.funCount)/typeFunCount
+					if(res.maxFunLine>=typeMaxFunLine){
+						typeMaxFunLine = res.maxFunLine
+					}
+					if(res.minFunLine<=typeMinFunLine){
+						typeMinFunLine = res.minFunLine
+					}
+				}
+			})
+			return {
+				type: val,
+				count: typeCountLine,
+				fileCount: typeCountFile,
+				fileSize: typeSizeFile,
+				typeSingleBlank: typeSingleBlank,
+				typeDoubleBlank: typeDoubleBlank,
+				typeNotesLine: typeNotesLine,
+				typeFunCount: typeFunCount,
+				typeAveFunLine:typeAveFunLine,
+				typeMaxFunLine:typeMaxFunLine,
+				typeMinFunLine:typeMinFunLine
+			}
+		})
+		typeCountList.forEach(val => {
+			singleBlankAll+=val.typeSingleBlank
+			doubleBlankAll+=val.typeDoubleBlank
+			notesLineAll+=val.typeNotesLine
+			funCountAll+=val.typeFunCount
+			aveFunLineAll = (aveFunLineAll * (funCountAll-val.typeFunCount)+val.typeAveFunLine*val.typeFunCount)/funCountAll
+			if(val.typeMaxFunLine>=maxFunLineAll){
+				maxFunLineAll = val.typeMaxFunLine
+			}
+			if(val.typeMinFunLine<=minFunLineAll){
+				minFunLineAll = val.typeMinFunLine
+			}
+			if (val.count != 0) {
+				textDom +=
+					`
+					<tr onclick="filterSet('${val.type}')" class="pointer">
+						<td>\\</td>
+						<td>${val.type}统计文件${val.fileCount}个</td>
+						<td>${val.count}</td>
+						<td>${val.fileSize}B</td>
+					</tr> 
+					`
+			}
+
+		})
+		showList.forEach((val, index) => {
+			countAll += val.lines
+			sizeAll += val.size
+			textDom += `
+			<tr>
+				<td>${index+1}</td>
+				<td>${val.path}</td>
+				<td>${val.lines}</td>
+				<td>${val.size}B</td>
+			</tr> 
+			`
+		})
+		textDom =
+			`
+		<tr>		
+			<th>序号</th>		
+			<th>文件</th>
+			<th>行数</th>
+			<th>大小</th>
+		</tr> 
+		<tr>
+			<td>\\</td>
+			<td>统计文件${showList.length}个</td>
+			<td>${countAll}</td>
+			<td>${sizeAll}B</td>
+		</tr> 
+		` +
+			textDom
+		result.innerHTML = textDom
+		// result.select()
+		//无效文件统计
+		let unType = document.getElementById("unType");
+		let unTypeDom =
+			`
+			<tr>
+				<th>序号</th>
+				<th>文件</th>
+				<th>类型</th>
+			</tr> 
+		<tr>
+			<td>\\</td>
+			<td>无效文件共${unTypefiles.length}个</td>
+			<td>\\</td>
+		</tr> 
+		`
+		unTypefiles.forEach((val, ind) => {
+			let name = val.webkitRelativePath != "" ? val.webkitRelativePath : val.name
+			unTypeDom += `
+				<tr>
+					<td>${ind+1}</td>
+					<td>${name}</td>
+					<td>${val.type}<td>
+				</tr> 
+			`
+		})
+		unType.innerHTML = unTypeDom
+
+		// 文件类型统计
+		// console.log((removeDuplicate(allTypeList)))
+		console.log("空行行数："+singleBlankAll)
+		console.log("连续两行及以上的空行行数："+doubleBlankAll)
+		console.log("注释行数：",notesLineAll)
+		console.log("函数个数：",funCountAll)
+		console.log("函数行数平均值：",aveFunLineAll)
+		console.log("函数行数最大值：",maxFunLineAll)
+		console.log("函数行数最小值：",minFunLineAll)
+		console.log("函数行数中位数：",getMedian(allFuntionLines))
+		// 时间消耗
+		console.log('timeCost is', `${timeCost}ms`)
+	}
+	//检查类型是否符合规定
+	function checkIsText(file) {
+		let list = file.name.split(".")
+		let tail = list[list.length - 1]
+
+		// 获取全部文件类型
+		allTypeList.push(tail)
+
+		if (typeList.indexOf(tail) == -1) {
+			// console.log(file.name+"此类型文件不在统计规则")
+			unTypefiles.push(file)
+			return false
+		}
+		return true
+	}
+	// 下载
+	function download(content) {
+		// 创建隐藏的可下载链接
+		var eleLink = document.createElement('a');
+		eleLink.download = '代码合并.txt.txt';
+		eleLink.style.display = 'none';
+		// 字符内容转变成blob地址
+		var blob = new Blob([content]);
+		eleLink.href = URL.createObjectURL(blob);
+		// 触发点击
+		document.body.appendChild(eleLink);
+		eleLink.click();
+		// 然后移除
+		document.body.removeChild(eleLink);
+	};
+	// 获取某个数组的中位数
+	function getMedian(arr) {
+        let num = 0;
+        if (arr) {
+            if (arr instanceof Array) {
+                if (arr.length) {
+                    arr = arr.sort((a, b) => a - b);
+                    //三目运算+IIFE写法
+                    arr.length % 2 == 1 ? (() => {
+                        num = arr[(arr.length - 1) / 2] //奇数长度数组
+                    })() : (() => {
+                        num = (arr[(arr.length) / 2] + arr[(arr.length) / 2 - 1]) / 2;
+                    })()
+                } else {
+                    console.error(new Error('空数组!!!'));
+                    return
+                }
+            } else {
+                console.error(new Error('请传入数组格式的数据'));
+                return
+            }
+        } else {
+            console.error(new Error('请传入数据'));
+            return
+        }
+        return num;
+    }
+
+</script>
+<style type="text/css">
+	tr:nth-child(odd) {
+		background: #ebebeb;
+	}
+
+	tr:nth-child(even) {
+		background: #cccccc;
+	}
+
+	tr:hover {
+		background: #000;
+		color: #fff;
+		cursor: default;
+	}
+
+	.pointer:hover {
+		cursor: pointer;
+	}
+</style>
